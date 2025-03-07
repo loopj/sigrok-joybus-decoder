@@ -149,15 +149,15 @@ class Decoder(srd.Decoder):
         else:
             command_name = f"0x{command:02X}"
 
-        self.putg(ss, es, [0, [f"Command: {command_name}"]])
+        self.putg(ss, es, [0, [f"Command: {command_name}", f"{command_name}"]])
 
     def put_command_data(self, ss, es, data):
         """Output a command byte annotation."""
-        self.putg(ss, es, [1, [f"Data: 0x{data:02X}"]])
+        self.putg(ss, es, [1, [f"Data: 0x{data:02X}", f"0x{data:02X}", f"{data:02X}"]])
 
     def put_response_data(self, ss, es, data):
         """Output a response byte annotation."""
-        self.putg(ss, es, [2, [f"Data: 0x{data:02X}"]])
+        self.putg(ss, es, [2, [f"Data: 0x{data:02X}", f"0x{data:02X}", f"{data:02X}"]])
 
     def put_bit(self, ss, es, bit):
         """Output a bit annotation."""
@@ -165,7 +165,7 @@ class Decoder(srd.Decoder):
 
     def put_stop_bit(self, ss, es):
         """Output a stop bit annotation."""
-        self.putg(ss, es, [4, ["S"]])
+        self.putg(ss, es, [4, ["Stop", "S"]])
 
     def read_bit(self):
         """Read a single bit from the SI line and return its value."""
