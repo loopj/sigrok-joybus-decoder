@@ -6,15 +6,24 @@ consoles, over the console's serial interface.
 The serial interface (SI) is a half-duplex, asynchronous serial bus using a single,
 open-drain line with an external pull-up resistor.
 
-An N64/GameCube/Wii console sends messages at 200 kHz (a 5µs period):
+Each bit is transmitted over a fixed period T with an initial low pulse followed by a
+high pulse such that a logical “0” is encoded with a low-to-high ratio of 3:1
+(3T/4 low, T/4 high) and a logical “1” with a ratio of 1:3 (T/4 low, 3T/4 high).
+
+An GameCube/Wii console sends bits at 200 kHz (a 5µs period):
 - Logic 0 pulse:   3.75µs low, 1.25µs high
 - Logic 1 pulse:   1.25µs low, 3.75µs high
 - Stop bit:        1.25µs low, 3.75µs high (same as logic 1)
 
-N64/GameCube controllers reply with pulses at 250 kHz (a 4µs period):
+OEM wired GameCube controllers reply at 250 kHz (a 4µs period):
 - Logic 0 pulse:   3µs low, 1µs high
 - Logic 1 pulse:   1µs low, 3µs high
 - Stop bit:        2µs low, 2µs high
+
+WaveBird receivers send SI pulses at 225 kHz (a 4.44µs period):
+- Logic 0 pulse:   3.33µs low, 1.11µs high
+- Logic 1 pulse:   1.11µs low, 3.33µs high
+- Stop bit:        2.22µs low, 2.22µs high
 
 Communication:
 - Host (console) sends a 1-3 byte command to a device (controller).
@@ -25,6 +34,7 @@ Communication:
 import math
 import sigrokdecode as srd
 
+# A partial list of Joybus commands
 JOYBUS_COMMANDS = {
     0x00: {
         "name": "Info",
@@ -239,11 +249,13 @@ class Decoder(srd.Decoder):
                     command_start, command = self.read_byte()
                     self.put_command(command_start, self.samplenum, command)
 
+                    if command not in JOYBUS_COMMANDS:
+                        raise Exception("Unknown command")
+
                     # Read command data bytes if needed
-                    if command in JOYBUS_COMMANDS:
-                        for _ in range(1, JOYBUS_COMMANDS[command]["command_len"]):
-                            start, byte = self.read_byte()
-                            self.put_command_data(start, self.samplenum, byte)
+                    for _ in range(1, JOYBUS_COMMANDS[command]["command_len"]):
+                        start, byte = self.read_byte()
+                        self.put_command_data(start, self.samplenum, byte)
 
                     # Read command stop bit
                     self.read_stop_bit(self.bit_command_samples)
@@ -256,10 +268,9 @@ class Decoder(srd.Decoder):
                         raise Exception("Response timeout")
 
                     # Read response bytes
-                    if command in JOYBUS_COMMANDS:
-                        for _ in range(JOYBUS_COMMANDS[command]["response_len"]):
-                            start, byte = self.read_byte()
-                            self.put_response_data(start, self.samplenum, byte)
+                    for _ in range(JOYBUS_COMMANDS[command]["response_len"]):
+                        start, byte = self.read_byte()
+                        self.put_response_data(start, self.samplenum, byte)
 
                     # Read response stop bit
                     self.read_stop_bit(self.bit_response_samples)
