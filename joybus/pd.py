@@ -204,11 +204,15 @@ class Decoder(srd.Decoder):
 
         return byte_start, byte_value
 
-    def read_stop_bit(self):
+    def read_stop_bit(self, width=None):
         """Read a stop bit from the SI line."""
         stop_start = self.samplenum
         self.wait({0: "r"})
-        self.put_stop_bit(stop_start, self.samplenum)
+
+        if width is None:
+            self.put_stop_bit(stop_start, self.samplenum)
+        else:
+            self.put_stop_bit(stop_start, stop_start + width)
 
     def decode(self):
         if not self.samplerate:
@@ -242,7 +246,7 @@ class Decoder(srd.Decoder):
                             self.put_command_data(start, self.samplenum, byte)
 
                     # Read command stop bit
-                    self.read_stop_bit()
+                    self.read_stop_bit(self.bit_command_samples)
 
                     # Wait for the response
                     (si,) = self.wait(
@@ -258,7 +262,7 @@ class Decoder(srd.Decoder):
                             self.put_response_data(start, self.samplenum, byte)
 
                     # Read response stop bit
-                    self.read_stop_bit()
+                    self.read_stop_bit(self.bit_response_samples)
 
                     # Return to idle state
                     self.state = "IDLE"
@@ -280,5 +284,7 @@ class Decoder(srd.Decoder):
 
             self.idle_min_samples = us_to_samples(100)
             self.bit_midpoint_samples = us_to_samples(2.5)
+            self.bit_command_samples = us_to_samples(5)
+            self.bit_response_samples = us_to_samples(4)
             self.bit_timeout_samples = us_to_samples(10)
             self.response_timeout_samples = us_to_samples(50)
