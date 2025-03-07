@@ -1,3 +1,5 @@
-# Sigrok Decoder for N64 / Gamecube Controller Protocol
+# Sigrok Decoder for Joybus Protocol
 
-This is a sigrok protocol decoder for the  N64 and Gamecube controller (SI) protocol.
+Sigrok protocol decoder for the Joybus protocol, used by N64 and GameCube controllers.
+
+Adds Joybus protocol decoding support to Sigrok, PulseView, DSView, and other tools that use libsigrokdecode.

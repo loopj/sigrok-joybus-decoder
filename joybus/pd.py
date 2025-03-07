@@ -1,14 +1,17 @@
-"""SI (Serial Interface) protocol
+"""Joybus protocol decoder for sigrok.
 
-SI is a half-duplex, asynchronous serial protocol using a single, open-drain
-line with an external pull-up resistor.
+The Joybus protocol is used for communicating between N64/GameCube controllers and
+consoles, over the console's serial interface.
 
-A GameCube/Wii console sends SI messages at 200 kHz (a 5µs period):
+The serial interface (SI) is a half-duplex, asynchronous serial bus using a single,
+open-drain line with an external pull-up resistor.
+
+An N64/GameCube/Wii console sends messages at 200 kHz (a 5µs period):
 - Logic 0 pulse:   3.75µs low, 1.25µs high
 - Logic 1 pulse:   1.25µs low, 3.75µs high
 - Stop bit:        1.25µs low, 3.75µs high (same as logic 1)
 
-GameCube controllers reply with SI pulses at 250 kHz (a 4µs period):
+N64/GameCube controllers reply with pulses at 250 kHz (a 4µs period):
 - Logic 0 pulse:   3µs low, 1µs high
 - Logic 1 pulse:   1µs low, 3µs high
 - Stop bit:        2µs low, 2µs high
@@ -22,7 +25,7 @@ Communication:
 import math
 import sigrokdecode as srd
 
-SI_COMMANDS = {
+JOYBUS_COMMANDS = {
     0x00: {
         "name": "Info",
         "command_len": 1,
@@ -63,10 +66,10 @@ SI_COMMANDS = {
 
 class Decoder(srd.Decoder):
     api_version = 3
-    id = "si"
-    name = "SI"
-    longname = "SI"
-    desc = "N64 and GameCube controller protocol"
+    id = "joybus"
+    name = "Joybus"
+    longname = "Joybus (N64/GameCube)"
+    desc = "Joybus protocol for N64 and GameCube controllers"
     license = "mit"
     inputs = ["logic"]
     outputs = []
@@ -79,10 +82,12 @@ class Decoder(srd.Decoder):
         ("response_data_byte", "Response data byte"),
         ("data_bit", "Data bit"),
         ("stop_bit", "Stop bit"),
+        ("error", "Error"),
     )
     annotation_rows = (
         ("bytes", "Data", (0, 1, 2)),
         ("bits", "Bits", (3, 4)),
+        ("errors", "Errors", (5,)),
     )
 
     def __init__(self, **kwargs):
@@ -94,47 +99,56 @@ class Decoder(srd.Decoder):
     def reset(self):
         self.state = "INITIAL"
 
-    def put_command(self, start, command):
+    def putg(self, ss, es, data):
+        self.put(ss, es, self.out_ann, data)
+
+    def put_command(self, ss, es, command):
         """Output a command annotation."""
-        if command in SI_COMMANDS:
-            command_name = SI_COMMANDS[command]["name"]
+        if command in JOYBUS_COMMANDS:
+            command_name = JOYBUS_COMMANDS[command]["name"]
         else:
             command_name = f"0x{command:02X}"
 
-        self.put(start, self.samplenum, self.out_ann, [0, [f"Command: {command_name}"]])
+        self.putg(ss, es, [0, [f"Command: {command_name}"]])
 
-    def put_command_data(self, start, data):
+    def put_command_data(self, ss, es, data):
         """Output a command byte annotation."""
-        self.put(start, self.samplenum, self.out_ann, [1, [f"Data: 0x{data:02X}"]])
+        self.putg(ss, es, [1, [f"Data: 0x{data:02X}"]])
 
-    def put_response_data(self, start, data):
+    def put_response_data(self, ss, es, data):
         """Output a response byte annotation."""
-        self.put(start, self.samplenum, self.out_ann, [2, [f"Data: 0x{data:02X}"]])
+        self.putg(ss, es, [2, [f"Data: 0x{data:02X}"]])
 
-    def put_bit(self, start, bit):
+    def put_bit(self, ss, es, bit):
         """Output a bit annotation."""
-        self.put(start, self.samplenum, self.out_ann, [3, [str(bit)]])
+        self.putg(ss, es, [3, [str(bit)]])
 
-    def put_stop_bit(self, start):
+    def put_stop_bit(self, ss, es):
         """Output a stop bit annotation."""
-        self.put(start, self.samplenum, self.out_ann, [4, ["S"]])
+        self.putg(ss, es, [4, ["S"]])
 
     def read_bit(self):
         """Read a single bit from the SI line and return its value."""
         bit_start = self.samplenum
 
+        # Wait for the low pulse to end
+        (si,) = self.wait([{0: "r"}, {"skip": self.bit_timeout_samples}])
+        if si == 0:
+            raise Exception("Bit timeout")
+
         # Measure the duration of the low pulse
-        self.wait({0: "r"})
         low_duration = self.samplenum - bit_start
 
         # Determine the bit value based on the duration of the low pulse
-        bit_value = 0 if low_duration > self.low_midpoint_samples else 1
+        bit_value = 0 if low_duration > self.bit_midpoint_samples else 1
 
         # Wait for the high pulse to end
-        self.wait({0: "f"})
+        (si,) = self.wait([{0: "f"}, {"skip": self.bit_timeout_samples}])
+        if si == 1:
+            raise Exception("Bit timeout")
 
         # Add bit annotation
-        self.put_bit(bit_start, bit_value)
+        self.put_bit(bit_start, self.samplenum, bit_value)
 
         return bit_value
 
@@ -154,7 +168,7 @@ class Decoder(srd.Decoder):
         """Read a stop bit from the SI line."""
         stop_start = self.samplenum
         self.wait({0: "r"})
-        self.put_stop_bit(stop_start)
+        self.put_stop_bit(stop_start, self.samplenum)
 
     def decode(self):
         if not self.samplerate:
@@ -175,41 +189,56 @@ class Decoder(srd.Decoder):
                 self.state = "COMMAND"
 
             elif self.state == "COMMAND":
-                # Read the command byte
-                command_start, command = self.read_byte()
-                self.put_command(command_start, command)
+                command_start = self.samplenum
+                try:
+                    # Read the command byte
+                    command_start, command = self.read_byte()
+                    self.put_command(command_start, self.samplenum, command)
 
-                # Read command data bytes if needed
-                if command in SI_COMMANDS:
-                    for _ in range(1, SI_COMMANDS[command]["command_len"]):
-                        data_start, data_byte = self.read_byte()
-                        self.put_command_data(data_start, data_byte)
+                    # Read command data bytes if needed
+                    if command in JOYBUS_COMMANDS:
+                        for _ in range(1, JOYBUS_COMMANDS[command]["command_len"]):
+                            start, byte = self.read_byte()
+                            self.put_command_data(start, self.samplenum, byte)
 
-                # Read command stop bit
-                self.read_stop_bit()
+                    # Read command stop bit
+                    self.read_stop_bit()
 
-                # Wait for the response
-                self.wait({0: "f"})
+                    # Wait for the response
+                    (si,) = self.wait(
+                        [{0: "f"}, {"skip": self.response_timeout_samples}]
+                    )
+                    if si == 1:
+                        raise Exception("Response timeout")
 
-                # Read response bytes
-                if command in SI_COMMANDS:
-                    for _ in range(SI_COMMANDS[command]["response_len"]):
-                        resp_start, resp_byte = self.read_byte()
-                        self.put_response_data(resp_start, resp_byte)
+                    # Read response bytes
+                    if command in JOYBUS_COMMANDS:
+                        for _ in range(JOYBUS_COMMANDS[command]["response_len"]):
+                            start, byte = self.read_byte()
+                            self.put_response_data(start, self.samplenum, byte)
 
-                # Read response stop bit
-                self.read_stop_bit()
+                    # Read response stop bit
+                    self.read_stop_bit()
 
-                # Return to idle state
-                self.state = "IDLE"
-
-    def us_to_samples(self, us):
-        return math.floor(self.samplerate / 1000000 * us)
+                    # Return to idle state
+                    self.state = "IDLE"
+                except Exception as e:
+                    self.putg(
+                        command_start,
+                        self.samplenum,
+                        [5, [str(e)]],
+                    )
+                    self.state = "INITIAL"
 
     def metadata(self, key, value):
         if key == srd.SRD_CONF_SAMPLERATE:
             self.samplerate = value
 
             # Update timing parameters based on the samplerate
-            self.idle_min_samples = self.us_to_samples(100)
-            self.low_midpoint_samples = self.us_to_samples(2.5)
+            def us_to_samples(us):
+                return math.floor(self.samplerate / 1000000 * us)
+
+            self.idle_min_samples = us_to_samples(100)
+            self.bit_midpoint_samples = us_to_samples(2.5)
+            self.bit_timeout_samples = us_to_samples(10)
+            self.response_timeout_samples = us_to_samples(50)
