@@ -31,6 +31,41 @@ JOYBUS_COMMANDS = {
         "command_len": 1,
         "response_len": 3,
     },
+    0x01: {
+        "name": "Controller State",
+        "command_len": 1,
+        "response_len": 4,
+    },
+    0x02: {
+        "name": "Read Accessory",
+        "command_len": 3,
+        "response_len": 33,
+    },
+    0x03: {
+        "name": "Write Accessory",
+        "command_len": 35,
+        "response_len": 1,
+    },
+    0x04: {
+        "name": "Read EEPROM",
+        "command_len": 2,
+        "response_len": 8,
+    },
+    0x05: {
+        "name": "Write EEPROM",
+        "command_len": 10,
+        "response_len": 1,
+    },
+    0x14: {
+        "name": "Read GBA",
+        "command_len": 3,
+        "response_len": 33,
+    },
+    0x15: {
+        "name": "Write GBA",
+        "command_len": 35,
+        "response_len": 1,
+    },
     0x40: {
         "name": "Short Poll",
         "command_len": 3,
@@ -55,6 +90,11 @@ JOYBUS_COMMANDS = {
         "name": "Fix Device",
         "command_len": 3,
         "response_len": 3,
+    },
+    0x54: {
+        "name": "Keyboard Poll",
+        "command_len": 3,
+        "response_len": 8,
     },
     0xFF: {
         "name": "Reset",
