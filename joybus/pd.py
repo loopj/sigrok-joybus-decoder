@@ -147,7 +147,7 @@ class Decoder(srd.Decoder):
         self.out_ann = self.register(srd.OUTPUT_ANN)
 
     def reset(self):
-        self.state = "INITIAL"
+        self.state = "IDLE"
 
     def putg(self, ss, es, data):
         self.put(ss, es, self.out_ann, data)
@@ -229,7 +229,7 @@ class Decoder(srd.Decoder):
             raise Exception("Cannot decode without samplerate.")
 
         while True:
-            if self.state == "INITIAL":
+            if self.state == "UNKNOWN":
                 # Wait for bus to be high for at least 100us before moving to idle state
                 # This is to ensure we don't start decoding in the middle of a command/response
                 self.wait({0: "h"})
@@ -283,7 +283,7 @@ class Decoder(srd.Decoder):
                         self.samplenum,
                         [5, [str(e)]],
                     )
-                    self.state = "INITIAL"
+                    self.state = "UNKNOWN"
 
     def metadata(self, key, value):
         if key == srd.SRD_CONF_SAMPLERATE:
