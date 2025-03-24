@@ -96,9 +96,19 @@ JOYBUS_COMMANDS = {
         "command_len": 3,
         "response_len": 10,
     },
+    0x4D: {
+        "name": "Probe Device",
+        "command_len": 3,
+        "response_len": 8,
+    },
     0x4E: {
         "name": "Fix Device",
         "command_len": 3,
+        "response_len": 3,
+    },
+    0x4F: {
+        "name": "Unknown",
+        "command_len": 1,
         "response_len": 3,
     },
     0x54: {
