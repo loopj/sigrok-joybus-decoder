@@ -76,6 +76,12 @@ JOYBUS_COMMANDS = {
         "command_len": 35,
         "response_len": 1,
     },
+    # PixelFX N64 Game ID
+    0x1D: {
+        "name": "N64 Game ID",
+        "command_len": 11,
+        "response_len": 0,
+    },
     0x40: {
         "name": "Short Poll",
         "command_len": 3,
@@ -270,20 +276,22 @@ class Decoder(srd.Decoder):
                     # Read command stop bit
                     self.read_stop_bit(self.bit_command_samples)
 
-                    # Wait for the response
-                    (si,) = self.wait(
-                        [{0: "f"}, {"skip": self.response_timeout_samples}]
-                    )
-                    if si == 1:
-                        raise Exception("Response timeout")
+                    # Wait for the response, if one is expected
+                    response_len = JOYBUS_COMMANDS[command]["response_len"]
+                    if response_len > 0:
+                        (si,) = self.wait(
+                            [{0: "f"}, {"skip": self.response_timeout_samples}]
+                        )
+                        if si == 1:
+                            raise Exception("Response timeout")
 
-                    # Read response bytes
-                    for _ in range(JOYBUS_COMMANDS[command]["response_len"]):
-                        start, byte = self.read_byte()
-                        self.put_response_data(start, self.samplenum, byte)
+                        # Read response bytes
+                        for _ in range(response_len):
+                            start, byte = self.read_byte()
+                            self.put_response_data(start, self.samplenum, byte)
 
-                    # Read response stop bit
-                    self.read_stop_bit(self.bit_response_samples)
+                        # Read response stop bit
+                        self.read_stop_bit(self.bit_response_samples)
 
                     # Return to idle state
                     self.state = "IDLE"
